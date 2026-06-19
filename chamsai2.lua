@@ -41,7 +41,7 @@ local function isLeafPart(obj)
 end
 
 -------------------------------------------------------
---// PLAYER ESP
+--// ESP FUNCTIONS
 -------------------------------------------------------
 
 local function addHighlight(player, character)
@@ -227,6 +227,45 @@ local function toggleAntiRecoil(state)
 end
 
 -------------------------------------------------------
+--// SELF DESTRUCT FUNCTION
+-------------------------------------------------------
+
+local function selfDestruct()
+    -- Reset modified settings
+    if NO_GRASS_ENABLED then
+        local terrain = Workspace:FindFirstChild("Terrain")
+        if terrain then terrain.Decoration = true end
+    end
+
+    if NO_LEAVES_ENABLED then
+        for obj, transparency in pairs(originalLeafTransparencies) do
+            if obj and obj.Parent then
+                obj.Transparency = transparency
+            end
+        end
+    end
+
+    -- Disconnect all connections
+    for _, conn in pairs(connections) do
+        if typeof(conn) == "RBXScriptConnection" then
+            conn:Disconnect()
+        end
+    end
+
+    -- Destroy all highlights
+    for _, h in pairs(playerHighlights) do h:Destroy() end
+    for _, h in pairs(itemHighlights) do h:Destroy() end
+    for _, h in pairs(npcHighlights) do h:Destroy() end
+
+    -- Destroy GUI
+    if gui then
+        gui:Destroy()
+    end
+
+    print("🧨 PD-CHAMS-LITE Self Destructed Successfully")
+end
+
+-------------------------------------------------------
 --// GUI
 -------------------------------------------------------
 
@@ -236,7 +275,7 @@ gui.ResetOnSpawn = false
 gui.Parent = game:GetService("CoreGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 520)  -- Increased height for slider
+frame.Size = UDim2.new(0, 220, 0, 560)
 frame.Position = UDim2.new(0.1, 0, 0.15, 0)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 frame.BorderSizePixel = 0
@@ -283,17 +322,17 @@ credit.TextXAlignment = Enum.TextXAlignment.Left
 credit.Parent = frame
 
 -- Button Creator
-local function makeButton(text, yOffset)
+local function makeButton(text, yOffset, isDestruct)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, -20, 0, 36)
     container.Position = UDim2.new(0, 10, 0, yOffset)
-    container.BackgroundColor3 = Color3.fromRGB(26, 26, 28)
+    container.BackgroundColor3 = isDestruct and Color3.fromRGB(80, 20, 20) or Color3.fromRGB(26, 26, 28)
     container.BorderSizePixel = 0
     container.Parent = frame
 
     local indicator = Instance.new("Frame")
     indicator.Size = UDim2.new(0, 4, 1, 0)
-    indicator.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
+    indicator.BackgroundColor3 = isDestruct and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(45, 45, 48)
     indicator.BorderSizePixel = 0
     indicator.Parent = container
 
@@ -302,7 +341,7 @@ local function makeButton(text, yOffset)
     btn.Position = UDim2.new(0, 10, 0, 0)
     btn.BackgroundTransparency = 1
     btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(170, 170, 175)
+    btn.TextColor3 = isDestruct and Color3.fromRGB(255, 180, 180) or Color3.fromRGB(170, 170, 175)
     btn.TextSize = 14
     btn.Font = Enum.Font.SourceSansSemibold
     btn.TextXAlignment = Enum.TextXAlignment.Left
@@ -311,7 +350,7 @@ local function makeButton(text, yOffset)
     return btn, indicator
 end
 
--- Create Toggle Buttons
+-- Toggle Buttons
 local toggles = {}
 local y = 70
 for _, data in ipairs({
@@ -396,20 +435,13 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
--------------------------------------------------------
---// STATUS + BUTTON LOGIC + DRAGGING
--------------------------------------------------------
+-- Self Destruct Button
+local destructBtn, _ = makeButton("SELF DESTRUCT", y + 80, true)
+destructBtn.MouseButton1Click:Connect(selfDestruct)
 
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -28, 0, 26)
-statusLabel.Position = UDim2.new(0, 14, 1, -40)
-statusLabel.BackgroundTransparency = 1
-statusLabel.Text = "Status: Undetectable"
-statusLabel.TextColor3 = Color3.fromRGB(0, 230, 115)
-statusLabel.TextSize = 13
-statusLabel.Font = Enum.Font.SourceSansBold
-statusLabel.TextXAlignment = Enum.TextXAlignment.Left
-statusLabel.Parent = frame
+-------------------------------------------------------
+--// BUTTON LOGIC + DRAGGING + UPTIME
+-------------------------------------------------------
 
 local function updateIndicator(btnData, state)
     if state then
