@@ -9,8 +9,7 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 --// Settings
-local MAIN_ESP_ENABLED = false
-local PLAYER_ESP_ENABLED = true
+local PLAYER_ESP_ENABLED = false
 local ITEM_ESP_ENABLED = false
 local NPC_ESP_ENABLED = false
 local TRACERS_ENABLED = false
@@ -28,8 +27,6 @@ local originalLeafTransparencies = {}
 local connections = {}
 local startTime = os.time()
 
-local espSubMenuOpen = false
-
 -------------------------------------------------------
 --// HELPER FUNCTIONS
 -------------------------------------------------------
@@ -45,41 +42,59 @@ local function isLeafPart(obj)
 end
 
 -------------------------------------------------------
---// ESP + TRACERS
+--// TRACERS
 -------------------------------------------------------
-
-local function createTracer(player)
-    if tracerLines[player] then tracerLines[player]:Destroy() end
-    
-    local line = Drawing.new("Line")
-    line.Thickness = 1.5
-    line.Color = Color3.fromRGB(255, 50, 50)
-    line.Transparency = 1
-    tracerLines[player] = line
-end
 
 local function updateTracers()
     for player, line in pairs(tracerLines) do
-        if player and player.Character and player.Character:FindFirstChild("Head") and 
-           PLAYER_ESP_ENABLED and TRACERS_ENABLED then
+        if TRACERS_ENABLED and PLAYER_ESP_ENABLED and player.Character and player.Character:FindFirstChild("Head") then
             local head = player.Character.Head
             local vector, onScreen = Camera:WorldToViewportPoint(head.Position)
             
             if onScreen then
-                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y - 30)
                 line.To = Vector2.new(vector.X, vector.Y)
                 line.Visible = true
             else
                 line.Visible = false
             end
         else
-            if line then line.Visible = false end
+            line.Visible = false
         end
     end
 end
 
+local function toggleTracers(state)
+    TRACERS_ENABLED = state
+    if state then
+        -- Create lines for existing players
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and not tracerLines[player] then
+                local line = Drawing.new("Line")
+                line.Thickness = 1.6
+                line.Color = Color3.fromRGB(255, 60, 60)
+                line.Transparency = 1
+                tracerLines[player] = line
+            end
+        end
+        connections.tracers = RunService.RenderStepped:Connect(updateTracers)
+    else
+        if connections.tracers then
+            connections.tracers:Disconnect()
+            connections.tracers = nil
+        end
+        for _, line in pairs(tracerLines) do line:Destroy() end
+        table.clear(tracerLines)
+    end
+end
+
+-------------------------------------------------------
+--// PLAYER ESP
+-------------------------------------------------------
+
 local function addHighlight(player, character)
     if player == LocalPlayer or not character or character:FindFirstChild("PlayerHighlight") then return end
+
     local highlight = Instance.new("Highlight")
     highlight.Name = "PlayerHighlight"
     highlight.FillColor = Color3.fromRGB(255, 0, 0)
@@ -89,6 +104,7 @@ local function addHighlight(player, character)
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     highlight.Adornee = character
     highlight.Parent = character
+
     playerHighlights[player] = highlight
 end
 
@@ -104,17 +120,29 @@ local function togglePlayerESP(state)
     end
 end
 
-local function toggleItemESP(state)
-    ITEM_ESP_ENABLED = state
-    -- (same logic as before)
-    if not state then
-        for _, h in pairs(itemHighlights) do h:Destroy() end
-        table.clear(itemHighlights)
-    else
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if isValidItem(obj) then addItemHighlight(obj) end
-        end
-    end
+-------------------------------------------------------
+--// NPC & ITEM ESP
+-------------------------------------------------------
+
+local function isValidNPC(obj)
+    return obj:IsA("Model") and not isPlayerCharacter(obj) and 
+           obj:FindFirstChildOfClass("Humanoid") and obj:FindFirstChild("HumanoidRootPart")
+end
+
+local function addNpcHighlight(obj)
+    if npcHighlights[obj] or obj:FindFirstChild("NpcHighlight") then return end
+    if not isValidNPC(obj) then return end
+
+    local hl = Instance.new("Highlight")
+    hl.Name = "NpcHighlight"
+    hl.FillColor = Color3.fromRGB(0, 120, 255)
+    hl.OutlineColor = Color3.fromRGB(0, 200, 255)
+    hl.FillTransparency = 0.3
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee = obj
+    hl.Parent = obj
+    npcHighlights[obj] = hl
 end
 
 local function toggleNpcESP(state)
@@ -129,16 +157,104 @@ local function toggleNpcESP(state)
     end
 end
 
-local function toggleTracers(state)
-    TRACERS_ENABLED = state
+local function isValidItem(obj)
+    if obj:IsDescendantOf(LocalPlayer.Character or {}) then return false end
+    if isPlayerCharacter(obj) or obj:FindFirstChildOfClass("Humanoid") then return false end
+    return obj:IsA("Tool") or (obj:IsA("Model") and obj:FindFirstChildWhichIsA("BasePart")) or obj:IsA("BasePart")
+end
+
+local function addItemHighlight(obj)
+    if itemHighlights[obj] or obj:FindFirstChild("ItemHighlight") then return end
+    if not isValidItem(obj) then return end
+
+    local hl = Instance.new("Highlight")
+    hl.Name = "ItemHighlight"
+    hl.FillColor = Color3.fromRGB(255, 255, 0)
+    hl.OutlineColor = Color3.fromRGB(255, 255, 0)
+    hl.FillTransparency = 0.25
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee = obj
+    hl.Parent = obj
+    itemHighlights[obj] = hl
+end
+
+local function toggleItemESP(state)
+    ITEM_ESP_ENABLED = state
     if not state then
-        for _, line in pairs(tracerLines) do line:Destroy() end
-        table.clear(tracerLines)
+        for _, h in pairs(itemHighlights) do h:Destroy() end
+        table.clear(itemHighlights)
+    else
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if isValidItem(obj) then addItemHighlight(obj) end
+        end
     end
 end
 
 -------------------------------------------------------
---// GUI (With Expandable ESP)
+--// VISUAL MODS
+-------------------------------------------------------
+
+local function toggleNoGrass(state)
+    NO_GRASS_ENABLED = state
+    local terrain = Workspace:FindFirstChild("Terrain")
+    if terrain then
+        terrain.Decoration = not state   -- This should now work
+    end
+end
+
+local function toggleNoLeaves(state)
+    NO_LEAVES_ENABLED = state
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if isLeafPart(obj) then
+            if state then
+                if not originalLeafTransparencies[obj] then
+                    originalLeafTransparencies[obj] = obj.Transparency
+                end
+                obj.Transparency = 1
+            elseif originalLeafTransparencies[obj] then
+                obj.Transparency = originalLeafTransparencies[obj]
+                originalLeafTransparencies[obj] = nil
+            end
+        end
+    end
+end
+
+local function toggleAntiRecoil(state)
+    ANTI_RECOIL_ENABLED = state
+    if connections.recoil then connections.recoil:Disconnect() end
+
+    if state then
+        connections.recoil = RunService.RenderStepped:Connect(function()
+            for _, v in ipairs(Camera:GetDescendants()) do
+                if (v:IsA("NumberValue") or v:IsA("Vector3Value")) and
+                   (v.Name:lower():find("recoil") or v.Name:lower():find("kick")) then
+                    if v:IsA("NumberValue") then v.Value = 0 end
+                    if v:IsA("Vector3Value") then v.Value = Vector3.zero end
+                end
+            end
+
+            if LocalPlayer.Character then
+                for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+                    if tool:IsA("Tool") then
+                        for _, v in ipairs(tool:GetDescendants()) do
+                            if v:IsA("NumberValue") or v:IsA("Vector3Value") or v:IsA("DoubleConstrainedValue") then
+                                local name = v.Name:lower()
+                                if name:find("recoil") or name:find("kick") or name:find("climb") then
+                                    if v:IsA("NumberValue") or v:IsA("DoubleConstrainedValue") then v.Value = 0 end
+                                    if v:IsA("Vector3Value") then v.Value = Vector3.zero end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-------------------------------------------------------
+--// GUI + SLIDER
 -------------------------------------------------------
 
 local gui = Instance.new("ScreenGui")
@@ -147,14 +263,14 @@ gui.ResetOnSpawn = false
 gui.Parent = game:GetService("CoreGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 560)
+frame.Size = UDim2.new(0, 220, 0, 580) -- Extra height for slider
 frame.Position = UDim2.new(0.1, 0, 0.15, 0)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 frame.BorderSizePixel = 0
 frame.Active = true
 frame.Parent = gui
 
--- Top Bar
+-- Top accent
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 4)
 topBar.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
@@ -171,82 +287,189 @@ title.Font = Enum.Font.SourceSansBold
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = frame
 
--- Main ESP Button
-local espContainer = Instance.new("Frame")
-espContainer.Size = UDim2.new(1, -20, 0, 40)
-espContainer.Position = UDim2.new(0, 10, 0, 70)
-espContainer.BackgroundColor3 = Color3.fromRGB(26, 26, 28)
-espContainer.Parent = frame
+local uptimeLabel = Instance.new("TextLabel")
+uptimeLabel.Size = UDim2.new(0, 90, 0, 30)
+uptimeLabel.Position = UDim2.new(1, -104, 0, 8)
+uptimeLabel.BackgroundTransparency = 1
+uptimeLabel.Text = "00:00:00"
+uptimeLabel.TextColor3 = Color3.fromRGB(170, 170, 175)
+uptimeLabel.TextSize = 13
+uptimeLabel.Font = Enum.Font.SourceSansSemibold
+uptimeLabel.TextXAlignment = Enum.TextXAlignment.Right
+uptimeLabel.Parent = frame
 
-local espBtn = Instance.new("TextButton")
-espBtn.Size = UDim2.new(1, 0, 1, 0)
-espBtn.BackgroundTransparency = 1
-espBtn.Text = "ESP"
-espBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-espBtn.TextSize = 15
-espBtn.Font = Enum.Font.SourceSansBold
-espBtn.TextXAlignment = Enum.TextXAlignment.Left
-espBtn.Parent = espContainer
-
--- Submenu Frame
-local subMenu = Instance.new("Frame")
-subMenu.Size = UDim2.new(1, -20, 0, 160)
-subMenu.Position = UDim2.new(0, 10, 0, 115)
-subMenu.BackgroundColor3 = Color3.fromRGB(20, 20, 22)
-subMenu.Visible = false
-subMenu.Parent = frame
-
--- Sub Options with Checkboxes
-local function createSubOption(text, yPos, toggleFunc)
+-- Button Creator
+local function makeButton(text, yOffset)
     local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, -20, 0, 30)
-    container.Position = UDim2.new(0, 10, 0, yPos)
-    container.BackgroundTransparency = 1
-    container.Parent = subMenu
+    container.Size = UDim2.new(1, -20, 0, 36)
+    container.Position = UDim2.new(0, 10, 0, yOffset)
+    container.BackgroundColor3 = Color3.fromRGB(26, 26, 28)
+    container.BorderSizePixel = 0
+    container.Parent = frame
 
-    local checkbox = Instance.new("TextButton")
-    checkbox.Size = UDim2.new(0, 20, 0, 20)
-    checkbox.Position = UDim2.new(0, 0, 0.5, -10)
-    checkbox.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
-    checkbox.Text = "✓"
-    checkbox.TextColor3 = Color3.fromRGB(130, 45, 230)
-    checkbox.TextScaled = true
-    checkbox.Parent = container
+    local indicator = Instance.new("Frame")
+    indicator.Size = UDim2.new(0, 4, 1, 0)
+    indicator.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
+    indicator.BorderSizePixel = 0
+    indicator.Parent = container
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, -30, 1, 0)
-    label.Position = UDim2.new(0, 30, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Color3.fromRGB(200, 200, 200)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = container
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -14, 1, 0)
+    btn.Position = UDim2.new(0, 10, 0, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(170, 170, 175)
+    btn.TextSize = 14
+    btn.Font = Enum.Font.SourceSansSemibold
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Parent = container
 
-    checkbox.MouseButton1Click:Connect(function()
-        local newState = not (checkbox.Text == "✓")
-        checkbox.Text = newState and "✓" or ""
-        toggleFunc(newState)
-    end)
-
-    return checkbox
+    return btn, indicator
 end
 
-local playerCheck = createSubOption("Player ESP", 5, togglePlayerESP)
-local itemCheck   = createSubOption("Item ESP", 40, toggleItemESP)
-local npcCheck    = createSubOption("NPC ESP", 75, toggleNpcESP)
-local tracerCheck = createSubOption("Tracers", 110, toggleTracers)
+-- Buttons
+local toggles = {}
+local y = 70
+for _, data in ipairs({
+    {"Player ESP", togglePlayerESP, "PLAYER_ESP_ENABLED"},
+    {"Item ESP", toggleItemESP, "ITEM_ESP_ENABLED"},
+    {"NPC ESP", toggleNpcESP, "NPC_ESP_ENABLED"},
+    {"Tracers", toggleTracers, "TRACERS_ENABLED"},
+    {"No Grass", toggleNoGrass, "NO_GRASS_ENABLED"},
+    {"No Leaves", toggleNoLeaves, "NO_LEAVES_ENABLED"},
+    {"Anti Recoil", toggleAntiRecoil, "ANTI_RECOIL_ENABLED"},
+}) do
+    local btn, ind = makeButton(data[1], y)
+    toggles[data[1]] = {button = btn, indicator = ind, toggleFunc = data[2], var = data[3]}
+    y += 42
+end
 
--- Right Click to Expand
-espBtn.MouseButton1Click:Connect(function()
-    MAIN_ESP_ENABLED = not MAIN_ESP_ENABLED
-    togglePlayerESP(MAIN_ESP_ENABLED)
+-------------------------------------------------------
+--// WORLD AMBIENCE SLIDER
+-------------------------------------------------------
+
+local ambienceLabel = Instance.new("TextLabel")
+ambienceLabel.Size = UDim2.new(1, -20, 0, 20)
+ambienceLabel.Position = UDim2.new(0, 14, 0, y + 10)
+ambienceLabel.BackgroundTransparency = 1
+ambienceLabel.Text = "Ambience: " .. string.format("%.1f", Lighting.ClockTime) .. "h"
+ambienceLabel.TextColor3 = Color3.fromRGB(140, 140, 145)
+ambienceLabel.TextSize = 13
+ambienceLabel.Font = Enum.Font.SourceSansSemibold
+ambienceLabel.TextXAlignment = Enum.TextXAlignment.Left
+ambienceLabel.Parent = frame
+
+local sliderBackground = Instance.new("Frame")
+sliderBackground.Size = UDim2.new(1, -28, 0, 6)
+sliderBackground.Position = UDim2.new(0, 14, 0, y + 38)
+sliderBackground.BackgroundColor3 = Color3.fromRGB(35, 35, 38)
+sliderBackground.BorderSizePixel = 0
+sliderBackground.Parent = frame
+
+local sliderFill = Instance.new("Frame")
+sliderFill.Size = UDim2.new(Lighting.ClockTime / 24, 0, 1, 0)
+sliderFill.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
+sliderFill.BorderSizePixel = 0
+sliderFill.Parent = sliderBackground
+
+local sliderButton = Instance.new("TextButton")
+sliderButton.Size = UDim2.new(0, 12, 0, 12)
+sliderButton.AnchorPoint = Vector2.new(0.5, 0.5)
+sliderButton.Position = UDim2.new(Lighting.ClockTime / 24, 0, 0.5, 0)
+sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+sliderButton.BorderSizePixel = 0
+sliderButton.Text = ""
+sliderButton.Parent = sliderBackground
+
+local sliderDragging = false
+
+local function updateSlider(inputPosition)
+    local relativeX = inputPosition.X - sliderBackground.AbsolutePosition.X
+    local percentage = math.clamp(relativeX / sliderBackground.AbsoluteSize.X, 0, 1)
+    
+    sliderButton.Position = UDim2.new(percentage, 0, 0.5, 0)
+    sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+    
+    local targetTime = percentage * 24
+    Lighting.ClockTime = targetTime
+    ambienceLabel.Text = "Ambience: " .. string.format("%.1f", targetTime) .. "h"
+end
+
+sliderButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        sliderDragging = true
+    end
 end)
 
-espBtn.MouseButton2Click:Connect(function()
-    espSubMenuOpen = not espSubMenuOpen
-    subMenu.Visible = espSubMenuOpen
+UserInputService.InputChanged:Connect(function(input)
+    if sliderDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        updateSlider(input.Position)
+    end
 end)
 
--- Other Buttons (No Grass, No Leaves, Anti Recoil, Slider, Self Destruct) remain below...
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        sliderDragging = false
+    end
+end)
 
-print("✅ PD-CHAMS-LITE Loaded ")
+-------------------------------------------------------
+--// BUTTON LOGIC + OTHER FEATURES
+-------------------------------------------------------
+
+local function updateIndicator(btnData, state)
+    if state then
+        btnData.indicator.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
+        btnData.button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        btnData.indicator.BackgroundColor3 = Color3.fromRGB(45, 45, 48)
+        btnData.button.TextColor3 = Color3.fromRGB(170, 170, 175)
+    end
+end
+
+for name, data in pairs(toggles) do
+    data.button.MouseButton1Click:Connect(function()
+        local newState = not _G[data.var] 
+        _G[data.var] = newState
+        data.toggleFunc(newState)
+        updateIndicator(data, newState)
+    end)
+end
+
+-- Dragging
+local dragging, dragStart, startPos
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+end)
+
+-- M to toggle UI
+UserInputService.InputBegan:Connect(function(input, gp)
+    if not gp and input.KeyCode == Enum.KeyCode.M then
+        UI_VISIBLE = not UI_VISIBLE
+        gui.Enabled = UI_VISIBLE
+    end
+end)
+
+-- Uptime
+RunService.RenderStepped:Connect(function()
+    local diff = os.time() - startTime
+    uptimeLabel.Text = string.format("%02d:%02d:%02d", 
+        math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
+end)
+
+print("✅ PD-CHAMS-LITE Loaded Successfully")
