@@ -28,8 +28,17 @@ local connections = {}
 local startTime = os.time()
 
 -------------------------------------------------------
---// HELPERS
+--// SAFE UTILS
 -------------------------------------------------------
+
+local function safeConnect(name, func)
+    local success, conn = pcall(function()
+        return RunService.RenderStepped:Connect(func)
+    end)
+    if success then
+        connections[name] = conn
+    end
+end
 
 local function isPlayerCharacter(model)
     return model and Players:GetPlayerFromCharacter(model) ~= nil
@@ -42,51 +51,41 @@ local function isLeafPart(obj)
 end
 
 -------------------------------------------------------
---// FIXED TRACERS (Proper Behind Camera Support)
+--// OPTIMIZED TRACERS
 -------------------------------------------------------
 
 local function updateTracers()
+    if not (TRACERS_ENABLED and PLAYER_ESP_ENABLED) then return end
+
     local viewport = Camera.ViewportSize
     local center = Vector2.new(viewport.X / 2, viewport.Y - 30)
 
     for player, line in pairs(tracerLines) do
-        if not (TRACERS_ENABLED and PLAYER_ESP_ENABLED and player.Character and player.Character:FindFirstChild("Head")) then
-            line.Visible = false
-            continue
-        end
-
-        local headPos = player.Character.Head.Position
-        local screenPos, onScreen = Camera:WorldToViewportPoint(headPos)
-
-        if onScreen then
-            -- Normal visible player
-            line.From = center
-            line.To = Vector2.new(screenPos.X, screenPos.Y)
-            line.Visible = true
-        else
-            -- Player is behind or off-screen
-            local camCFrame = Camera.CFrame
-            local direction = (headPos - camCFrame.Position).Unit
-
-            -- Project direction onto screen plane
-            local _, _, depth = camCFrame:ToObjectSpace(CFrame.new(headPos)).Position
-
-            if depth < 0 then
-                -- Behind camera - invert direction
-                direction = -direction
+        pcall(function()
+            if not (player.Character and player.Character:FindFirstChild("Head")) then
+                line.Visible = false
+                return
             end
 
-            local farPoint = camCFrame.Position + direction * 1000
-            local edgePos = Camera:WorldToViewportPoint(farPoint)
+            local headPos = player.Character.Head.Position
+            local screenPos, onScreen = Camera:WorldToViewportPoint(headPos)
 
-            -- Clamp to screen edges with margin
-            local x = math.clamp(edgePos.X, 40, viewport.X - 40)
-            local y = math.clamp(edgePos.Y, 40, viewport.Y - 40)
+            if onScreen then
+                line.From = center
+                line.To = Vector2.new(screenPos.X, screenPos.Y)
+            else
+                local direction = (headPos - Camera.CFrame.Position).Unit
+                local farPoint = Camera.CFrame.Position + direction * 1000
+                local edgePos = Camera:WorldToViewportPoint(farPoint)
 
-            line.From = center
-            line.To = Vector2.new(x, y)
+                local x = math.clamp(edgePos.X, 40, viewport.X - 40)
+                local y = math.clamp(edgePos.Y, 40, viewport.Y - 40)
+
+                line.From = center
+                line.To = Vector2.new(x, y)
+            end
             line.Visible = true
-        end
+        end)
     end
 end
 
@@ -96,44 +95,44 @@ local function toggleTracers(state)
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and not tracerLines[player] then
                 local line = Drawing.new("Line")
-                line.Thickness = 1.8
+                line.Thickness = 1.6
                 line.Color = Color3.fromRGB(255, 55, 55)
-                line.Transparency = 1
+                line.Transparency = 0.9
                 tracerLines[player] = line
             end
         end
-        connections.tracers = RunService.RenderStepped:Connect(updateTracers)
+        safeConnect("tracers", updateTracers)
     else
         if connections.tracers then connections.tracers:Disconnect() end
-        for _, line in pairs(tracerLines) do line:Destroy() end
+        for _, line in pairs(tracerLines) do pcall(function() line:Destroy() end) end
         table.clear(tracerLines)
     end
 end
 
 -------------------------------------------------------
---// PLAYER ESP + AUTO UPDATE
+--// PLAYER ESP
 -------------------------------------------------------
 
 local function addHighlight(player, character)
-    if player == LocalPlayer or not character or character:FindFirstChild("PlayerHighlight") then return end
-
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "PlayerHighlight"
-    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
-    highlight.FillTransparency = 0.3
-    highlight.OutlineTransparency = 0
-    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Adornee = character
-    highlight.Parent = character
-
-    playerHighlights[player] = highlight
+    pcall(function()
+        if player == LocalPlayer or not character or character:FindFirstChild("PlayerHighlight") then return end
+        local hl = Instance.new("Highlight")
+        hl.Name = "PlayerHighlight"
+        hl.FillColor = Color3.fromRGB(255, 0, 0)
+        hl.OutlineColor = Color3.fromRGB(255, 0, 0)
+        hl.FillTransparency = 0.35
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Adornee = character
+        hl.Parent = character
+        playerHighlights[player] = hl
+    end)
 end
 
 local function togglePlayerESP(state)
     PLAYER_ESP_ENABLED = state
     if not state then
-        for _, h in pairs(playerHighlights) do h:Destroy() end
+        for _, h in pairs(playerHighlights) do pcall(function() h:Destroy() end) end
         table.clear(playerHighlights)
     else
         for _, player in ipairs(Players:GetPlayers()) do
@@ -142,52 +141,47 @@ local function togglePlayerESP(state)
     end
 end
 
--- Auto update for new players
+-- Auto update new players
 connections.autoUpdate = RunService.Heartbeat:Connect(function()
-    if PLAYER_ESP_ENABLED then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character and not playerHighlights[player] then
-                addHighlight(player, player.Character)
+    pcall(function()
+        if PLAYER_ESP_ENABLED then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character and not playerHighlights[player] then
+                    addHighlight(player, player.Character)
+                end
             end
         end
-    end
+    end)
 end)
 
--- [Rest of the script - NPC, Item, Visual mods, GUI, Slider, etc.]
-
 -------------------------------------------------------
---// NPC & ITEM ESP (Same as before)
+--// OTHER ESP & VISUALS
 -------------------------------------------------------
 
 local function isValidNPC(obj)
-    return obj:IsA("Model") and not isPlayerCharacter(obj) and 
-           obj:FindFirstChildOfClass("Humanoid") and obj:FindFirstChild("HumanoidRootPart")
-end
-
-local function addNpcHighlight(obj)
-    if npcHighlights[obj] or obj:FindFirstChild("NpcHighlight") then return end
-    if not isValidNPC(obj) then return end
-
-    local hl = Instance.new("Highlight")
-    hl.Name = "NpcHighlight"
-    hl.FillColor = Color3.fromRGB(0, 120, 255)
-    hl.OutlineColor = Color3.fromRGB(0, 200, 255)
-    hl.FillTransparency = 0.3
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Adornee = obj
-    hl.Parent = obj
-    npcHighlights[obj] = hl
+    return obj:IsA("Model") and not isPlayerCharacter(obj) and obj:FindFirstChildOfClass("Humanoid") and obj:FindFirstChild("HumanoidRootPart")
 end
 
 local function toggleNpcESP(state)
     NPC_ESP_ENABLED = state
     if not state then
-        for _, h in pairs(npcHighlights) do h:Destroy() end
+        for _, h in pairs(npcHighlights) do pcall(function() h:Destroy() end) end
         table.clear(npcHighlights)
     else
         for _, obj in ipairs(Workspace:GetDescendants()) do
-            if isValidNPC(obj) then addNpcHighlight(obj) end
+            if isValidNPC(obj) then
+                pcall(function() 
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "NpcHighlight"
+                    hl.FillColor = Color3.fromRGB(0, 120, 255)
+                    hl.OutlineColor = Color3.fromRGB(0, 200, 255)
+                    hl.FillTransparency = 0.3
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    hl.Adornee = obj
+                    hl.Parent = obj
+                    npcHighlights[obj] = hl
+                end)
+            end
         end
     end
 end
@@ -195,40 +189,32 @@ end
 local function isValidItem(obj)
     if obj:IsDescendantOf(LocalPlayer.Character or {}) then return false end
     if isPlayerCharacter(obj) or obj:FindFirstChildOfClass("Humanoid") then return false end
-    return obj:IsA("Tool") or (obj:IsA("Model") and obj:FindFirstChildWhichIsA("BasePart")) or obj:IsA("BasePart")
-end
-
-local function addItemHighlight(obj)
-    if itemHighlights[obj] or obj:FindFirstChild("ItemHighlight") then return end
-    if not isValidItem(obj) then return end
-
-    local hl = Instance.new("Highlight")
-    hl.Name = "ItemHighlight"
-    hl.FillColor = Color3.fromRGB(255, 255, 0)
-    hl.OutlineColor = Color3.fromRGB(255, 255, 0)
-    hl.FillTransparency = 0.25
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Adornee = obj
-    hl.Parent = obj
-    itemHighlights[obj] = hl
+    return obj:IsA("Tool") or obj:IsA("BasePart") or (obj:IsA("Model") and obj:FindFirstChildWhichIsA("BasePart"))
 end
 
 local function toggleItemESP(state)
     ITEM_ESP_ENABLED = state
     if not state then
-        for _, h in pairs(itemHighlights) do h:Destroy() end
+        for _, h in pairs(itemHighlights) do pcall(function() h:Destroy() end) end
         table.clear(itemHighlights)
     else
         for _, obj in ipairs(Workspace:GetDescendants()) do
-            if isValidItem(obj) then addItemHighlight(obj) end
+            if isValidItem(obj) then
+                pcall(function()
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "ItemHighlight"
+                    hl.FillColor = Color3.fromRGB(255, 255, 0)
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 0)
+                    hl.FillTransparency = 0.25
+                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    hl.Adornee = obj
+                    hl.Parent = obj
+                    itemHighlights[obj] = hl
+                end)
+            end
         end
     end
 end
-
--------------------------------------------------------
---// VISUAL MODS
--------------------------------------------------------
 
 local function toggleNoGrass(state)
     NO_GRASS_ENABLED = state
@@ -240,15 +226,17 @@ local function toggleNoLeaves(state)
     NO_LEAVES_ENABLED = state
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if isLeafPart(obj) then
-            if state then
-                if not originalLeafTransparencies[obj] then
-                    originalLeafTransparencies[obj] = obj.Transparency
+            pcall(function()
+                if state then
+                    if not originalLeafTransparencies[obj] then
+                        originalLeafTransparencies[obj] = obj.Transparency
+                    end
+                    obj.Transparency = 1
+                elseif originalLeafTransparencies[obj] then
+                    obj.Transparency = originalLeafTransparencies[obj]
+                    originalLeafTransparencies[obj] = nil
                 end
-                obj.Transparency = 1
-            elseif originalLeafTransparencies[obj] then
-                obj.Transparency = originalLeafTransparencies[obj]
-                originalLeafTransparencies[obj] = nil
-            end
+            end)
         end
     end
 end
@@ -256,16 +244,16 @@ end
 local function toggleAntiRecoil(state)
     ANTI_RECOIL_ENABLED = state
     if connections.recoil then connections.recoil:Disconnect() end
-
     if state then
         connections.recoil = RunService.RenderStepped:Connect(function()
-            for _, v in ipairs(Camera:GetDescendants()) do
-                if (v:IsA("NumberValue") or v:IsA("Vector3Value")) and
-                   (v.Name:lower():find("recoil") or v.Name:lower():find("kick")) then
-                    if v:IsA("NumberValue") then v.Value = 0 end
-                    if v:IsA("Vector3Value") then v.Value = Vector3.zero end
+            pcall(function()
+                for _, v in ipairs(Camera:GetDescendants()) do
+                    if (v:IsA("NumberValue") or v:IsA("Vector3Value")) and (v.Name:lower():find("recoil") or v.Name:lower():find("kick")) then
+                        if v:IsA("NumberValue") then v.Value = 0 end
+                        if v:IsA("Vector3Value") then v.Value = Vector3.zero end
+                    end
                 end
-            end
+            end)
         end)
     end
 end
@@ -287,6 +275,7 @@ frame.BorderSizePixel = 0
 frame.Active = true
 frame.Parent = gui
 
+-- Top Bar
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 4)
 topBar.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
