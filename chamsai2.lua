@@ -471,4 +471,4 @@ RunService.RenderStepped:Connect(function()
     uptimeLabel.Text = string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
 end)
 
-print("✅ PD-CHAMS-LITE Loaded ")
+print("✅ PD-CHAMS-LITE Loaded")
