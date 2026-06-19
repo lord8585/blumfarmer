@@ -42,24 +42,39 @@ local function isLeafPart(obj)
 end
 
 -------------------------------------------------------
---// TRACERS
+--// IMPROVED TRACERS (Now works behind you)
 -------------------------------------------------------
 
 local function updateTracers()
     for player, line in pairs(tracerLines) do
-        if TRACERS_ENABLED and PLAYER_ESP_ENABLED and player.Character and player.Character:FindFirstChild("Head") then
-            local head = player.Character.Head
-            local vector, onScreen = Camera:WorldToViewportPoint(head.Position)
-            
-            if onScreen then
-                line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y - 30)
-                line.To = Vector2.new(vector.X, vector.Y)
-                line.Visible = true
-            else
-                line.Visible = false
-            end
-        else
+        if not (TRACERS_ENABLED and PLAYER_ESP_ENABLED and player.Character and player.Character:FindFirstChild("Head")) then
             line.Visible = false
+            continue
+        end
+
+        local head = player.Character.Head
+        local worldPos = head.Position
+        local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
+
+        if onScreen then
+            -- Normal on-screen tracer
+            line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y - 30)
+            line.To = Vector2.new(screenPos.X, screenPos.Y)
+            line.Visible = true
+        else
+            -- Off-screen tracer (points toward player even if behind you)
+            local direction = (worldPos - Camera.CFrame.Position).Unit
+            local ray = Camera.CFrame.Position + direction * 1000
+            local screenEdge, _ = Camera:WorldToViewportPoint(ray)
+
+            -- Clamp to screen edges
+            local viewport = Camera.ViewportSize
+            local x = math.clamp(screenEdge.X, 20, viewport.X - 20)
+            local y = math.clamp(screenEdge.Y, 20, viewport.Y - 20)
+
+            line.From = Vector2.new(viewport.X / 2, viewport.Y - 30)
+            line.To = Vector2.new(x, y)
+            line.Visible = true
         end
     end
 end
@@ -67,22 +82,18 @@ end
 local function toggleTracers(state)
     TRACERS_ENABLED = state
     if state then
-        -- Create lines for existing players
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and not tracerLines[player] then
                 local line = Drawing.new("Line")
-                line.Thickness = 1.6
+                line.Thickness = 1.8
                 line.Color = Color3.fromRGB(255, 60, 60)
-                line.Transparency = 1
+                line.Transparency = 0.9
                 tracerLines[player] = line
             end
         end
         connections.tracers = RunService.RenderStepped:Connect(updateTracers)
     else
-        if connections.tracers then
-            connections.tracers:Disconnect()
-            connections.tracers = nil
-        end
+        if connections.tracers then connections.tracers:Disconnect() end
         for _, line in pairs(tracerLines) do line:Destroy() end
         table.clear(tracerLines)
     end
