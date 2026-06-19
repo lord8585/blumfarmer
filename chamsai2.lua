@@ -42,10 +42,13 @@ local function isLeafPart(obj)
 end
 
 -------------------------------------------------------
---// TRACERS (Fixed - Works Behind Camera)
+--// FIXED TRACERS (Proper Behind Camera Support)
 -------------------------------------------------------
 
 local function updateTracers()
+    local viewport = Camera.ViewportSize
+    local center = Vector2.new(viewport.X / 2, viewport.Y - 30)
+
     for player, line in pairs(tracerLines) do
         if not (TRACERS_ENABLED and PLAYER_ESP_ENABLED and player.Character and player.Character:FindFirstChild("Head")) then
             line.Visible = false
@@ -56,20 +59,31 @@ local function updateTracers()
         local screenPos, onScreen = Camera:WorldToViewportPoint(headPos)
 
         if onScreen then
-            line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y - 30)
+            -- Normal visible player
+            line.From = center
             line.To = Vector2.new(screenPos.X, screenPos.Y)
             line.Visible = true
         else
-            -- Off-screen / Behind camera logic
-            local direction = (headPos - Camera.CFrame.Position).Unit
-            local farPoint = Camera.CFrame.Position + direction * 10000
+            -- Player is behind or off-screen
+            local camCFrame = Camera.CFrame
+            local direction = (headPos - camCFrame.Position).Unit
+
+            -- Project direction onto screen plane
+            local _, _, depth = camCFrame:ToObjectSpace(CFrame.new(headPos)).Position
+
+            if depth < 0 then
+                -- Behind camera - invert direction
+                direction = -direction
+            end
+
+            local farPoint = camCFrame.Position + direction * 1000
             local edgePos = Camera:WorldToViewportPoint(farPoint)
 
-            local viewport = Camera.ViewportSize
-            local x = math.clamp(edgePos.X, 30, viewport.X - 30)
-            local y = math.clamp(edgePos.Y, 30, viewport.Y - 30)
+            -- Clamp to screen edges with margin
+            local x = math.clamp(edgePos.X, 40, viewport.X - 40)
+            local y = math.clamp(edgePos.Y, 40, viewport.Y - 40)
 
-            line.From = Vector2.new(viewport.X / 2, viewport.Y - 30)
+            line.From = center
             line.To = Vector2.new(x, y)
             line.Visible = true
         end
@@ -83,7 +97,7 @@ local function toggleTracers(state)
             if player ~= LocalPlayer and not tracerLines[player] then
                 local line = Drawing.new("Line")
                 line.Thickness = 1.8
-                line.Color = Color3.fromRGB(255, 60, 60)
+                line.Color = Color3.fromRGB(255, 55, 55)
                 line.Transparency = 1
                 tracerLines[player] = line
             end
@@ -97,7 +111,7 @@ local function toggleTracers(state)
 end
 
 -------------------------------------------------------
---// PLAYER ESP
+--// PLAYER ESP + AUTO UPDATE
 -------------------------------------------------------
 
 local function addHighlight(player, character)
@@ -128,10 +142,7 @@ local function togglePlayerESP(state)
     end
 end
 
--------------------------------------------------------
---// AUTO UPDATE (New Players)
--------------------------------------------------------
-
+-- Auto update for new players
 connections.autoUpdate = RunService.Heartbeat:Connect(function()
     if PLAYER_ESP_ENABLED then
         for _, player in ipairs(Players:GetPlayers()) do
@@ -142,8 +153,10 @@ connections.autoUpdate = RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- [Rest of the script - NPC, Item, Visual mods, GUI, Slider, etc.]
+
 -------------------------------------------------------
---// NPC & ITEM ESP
+--// NPC & ITEM ESP (Same as before)
 -------------------------------------------------------
 
 local function isValidNPC(obj)
@@ -220,9 +233,7 @@ end
 local function toggleNoGrass(state)
     NO_GRASS_ENABLED = state
     local terrain = Workspace:FindFirstChild("Terrain")
-    if terrain then
-        terrain.Decoration = not state
-    end
+    if terrain then terrain.Decoration = not state end
 end
 
 local function toggleNoLeaves(state)
@@ -260,7 +271,7 @@ local function toggleAntiRecoil(state)
 end
 
 -------------------------------------------------------
---// GUI
+--// GUI (Full)
 -------------------------------------------------------
 
 local gui = Instance.new("ScreenGui")
@@ -276,7 +287,6 @@ frame.BorderSizePixel = 0
 frame.Active = true
 frame.Parent = gui
 
--- Top accent
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 4)
 topBar.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
@@ -304,7 +314,6 @@ uptimeLabel.Font = Enum.Font.SourceSansSemibold
 uptimeLabel.TextXAlignment = Enum.TextXAlignment.Right
 uptimeLabel.Parent = frame
 
--- Button Creator
 local function makeButton(text, yOffset)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, -20, 0, 36)
@@ -333,7 +342,6 @@ local function makeButton(text, yOffset)
     return btn, indicator
 end
 
--- Buttons
 local toggles = {}
 local y = 70
 for _, data in ipairs({
@@ -350,10 +358,7 @@ for _, data in ipairs({
     y += 42
 end
 
--------------------------------------------------------
---// WORLD AMBIENCE SLIDER
--------------------------------------------------------
-
+-- World Ambience Slider
 local ambienceLabel = Instance.new("TextLabel")
 ambienceLabel.Size = UDim2.new(1, -20, 0, 20)
 ambienceLabel.Position = UDim2.new(0, 14, 0, y + 10)
@@ -392,19 +397,15 @@ local sliderDragging = false
 local function updateSlider(inputPosition)
     local relativeX = inputPosition.X - sliderBackground.AbsolutePosition.X
     local percentage = math.clamp(relativeX / sliderBackground.AbsoluteSize.X, 0, 1)
-    
     sliderButton.Position = UDim2.new(percentage, 0, 0.5, 0)
     sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
-    
     local targetTime = percentage * 24
     Lighting.ClockTime = targetTime
     ambienceLabel.Text = "Ambience: " .. string.format("%.1f", targetTime) .. "h"
 end
 
 sliderButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        sliderDragging = true
-    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then sliderDragging = true end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
@@ -414,15 +415,10 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        sliderDragging = false
-    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then sliderDragging = false end
 end)
 
--------------------------------------------------------
---// BUTTON LOGIC
--------------------------------------------------------
-
+-- Button Logic
 local function updateIndicator(btnData, state)
     if state then
         btnData.indicator.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
@@ -435,20 +431,14 @@ end
 
 for name, data in pairs(toggles) do
     data.button.MouseButton1Click:Connect(function()
-        local newState = not (name == "Player ESP" and PLAYER_ESP_ENABLED or
-                            name == "Item ESP" and ITEM_ESP_ENABLED or
-                            name == "NPC ESP" and NPC_ESP_ENABLED or
-                            name == "Tracers" and TRACERS_ENABLED or
-                            name == "No Grass" and NO_GRASS_ENABLED or
-                            name == "No Leaves" and NO_LEAVES_ENABLED or
-                            name == "Anti Recoil" and ANTI_RECOIL_ENABLED)
-
+        local newState = not _G[name.."_STATE"]
+        _G[name.."_STATE"] = newState
         data.toggleFunc(newState)
         updateIndicator(data, newState)
     end)
 end
 
--- Dragging
+-- Dragging + M Key + Uptime
 local dragging, dragStart, startPos
 frame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -469,7 +459,6 @@ UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
 end)
 
--- M to toggle UI
 UserInputService.InputBegan:Connect(function(input, gp)
     if not gp and input.KeyCode == Enum.KeyCode.M then
         UI_VISIBLE = not UI_VISIBLE
@@ -477,11 +466,9 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
--- Uptime
 RunService.RenderStepped:Connect(function()
     local diff = os.time() - startTime
-    uptimeLabel.Text = string.format("%02d:%02d:%02d", 
-        math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
+    uptimeLabel.Text = string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
 end)
 
-print("✅ PD-CHAMS-LITE Loaded Successfully")
+print("✅ PD-CHAMS-LITE Loaded ")
