@@ -30,14 +30,11 @@ local startTime = os.time()
 -------------------------------------------------------
 --// SAFE UTILS
 -------------------------------------------------------
-
 local function safeConnect(name, func)
-    local success, conn = pcall(function()
-        return RunService.RenderStepped:Connect(func)
+    pcall(function()
+        if connections[name] then connections[name]:Disconnect() end
+        connections[name] = RunService.RenderStepped:Connect(func)
     end)
-    if success then
-        connections[name] = conn
-    end
 end
 
 local function isPlayerCharacter(model)
@@ -51,9 +48,8 @@ local function isLeafPart(obj)
 end
 
 -------------------------------------------------------
---// OPTIMIZED TRACERS
+--// TRACERS (Stable Version)
 -------------------------------------------------------
-
 local function updateTracers()
     if not (TRACERS_ENABLED and PLAYER_ESP_ENABLED) then return end
 
@@ -62,7 +58,7 @@ local function updateTracers()
 
     for player, line in pairs(tracerLines) do
         pcall(function()
-            if not (player.Character and player.Character:FindFirstChild("Head")) then
+            if not (player and player.Character and player.Character:FindFirstChild("Head")) then
                 line.Visible = false
                 return
             end
@@ -75,7 +71,7 @@ local function updateTracers()
                 line.To = Vector2.new(screenPos.X, screenPos.Y)
             else
                 local direction = (headPos - Camera.CFrame.Position).Unit
-                local farPoint = Camera.CFrame.Position + direction * 1000
+                local farPoint = Camera.CFrame.Position + direction * 1200
                 local edgePos = Camera:WorldToViewportPoint(farPoint)
 
                 local x = math.clamp(edgePos.X, 40, viewport.X - 40)
@@ -96,7 +92,7 @@ local function toggleTracers(state)
             if player ~= LocalPlayer and not tracerLines[player] then
                 local line = Drawing.new("Line")
                 line.Thickness = 1.6
-                line.Color = Color3.fromRGB(255, 55, 55)
+                line.Color = Color3.fromRGB(255, 60, 60)
                 line.Transparency = 0.9
                 tracerLines[player] = line
             end
@@ -112,7 +108,6 @@ end
 -------------------------------------------------------
 --// PLAYER ESP
 -------------------------------------------------------
-
 local function addHighlight(player, character)
     pcall(function()
         if player == LocalPlayer or not character or character:FindFirstChild("PlayerHighlight") then return end
@@ -141,7 +136,7 @@ local function togglePlayerESP(state)
     end
 end
 
--- Auto update new players
+-- Auto Update
 connections.autoUpdate = RunService.Heartbeat:Connect(function()
     pcall(function()
         if PLAYER_ESP_ENABLED then
@@ -155,9 +150,8 @@ connections.autoUpdate = RunService.Heartbeat:Connect(function()
 end)
 
 -------------------------------------------------------
---// OTHER ESP & VISUALS
+--// NPC & ITEM ESP
 -------------------------------------------------------
-
 local function isValidNPC(obj)
     return obj:IsA("Model") and not isPlayerCharacter(obj) and obj:FindFirstChildOfClass("Humanoid") and obj:FindFirstChild("HumanoidRootPart")
 end
@@ -170,7 +164,7 @@ local function toggleNpcESP(state)
     else
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if isValidNPC(obj) then
-                pcall(function() 
+                pcall(function()
                     local hl = Instance.new("Highlight")
                     hl.Name = "NpcHighlight"
                     hl.FillColor = Color3.fromRGB(0, 120, 255)
@@ -216,6 +210,9 @@ local function toggleItemESP(state)
     end
 end
 
+-------------------------------------------------------
+--// VISUAL MODS
+-------------------------------------------------------
 local function toggleNoGrass(state)
     NO_GRASS_ENABLED = state
     local terrain = Workspace:FindFirstChild("Terrain")
@@ -228,9 +225,7 @@ local function toggleNoLeaves(state)
         if isLeafPart(obj) then
             pcall(function()
                 if state then
-                    if not originalLeafTransparencies[obj] then
-                        originalLeafTransparencies[obj] = obj.Transparency
-                    end
+                    if not originalLeafTransparencies[obj] then originalLeafTransparencies[obj] = obj.Transparency end
                     obj.Transparency = 1
                 elseif originalLeafTransparencies[obj] then
                     obj.Transparency = originalLeafTransparencies[obj]
@@ -259,9 +254,8 @@ local function toggleAntiRecoil(state)
 end
 
 -------------------------------------------------------
---// GUI (Full)
+--// GUI
 -------------------------------------------------------
-
 local gui = Instance.new("ScreenGui")
 gui.Name = "PD_CHAMS_LITE"
 gui.ResetOnSpawn = false
@@ -275,7 +269,6 @@ frame.BorderSizePixel = 0
 frame.Active = true
 frame.Parent = gui
 
--- Top Bar
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 4)
 topBar.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
@@ -388,9 +381,8 @@ local function updateSlider(inputPosition)
     local percentage = math.clamp(relativeX / sliderBackground.AbsoluteSize.X, 0, 1)
     sliderButton.Position = UDim2.new(percentage, 0, 0.5, 0)
     sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
-    local targetTime = percentage * 24
-    Lighting.ClockTime = targetTime
-    ambienceLabel.Text = "Ambience: " .. string.format("%.1f", targetTime) .. "h"
+    Lighting.ClockTime = percentage * 24
+    ambienceLabel.Text = "Ambience: " .. string.format("%.1f", Lighting.ClockTime) .. "h"
 end
 
 sliderButton.InputBegan:Connect(function(input)
@@ -407,7 +399,9 @@ UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then sliderDragging = false end
 end)
 
--- Button Logic
+-------------------------------------------------------
+--// BUTTON LOGIC
+-------------------------------------------------------
 local function updateIndicator(btnData, state)
     if state then
         btnData.indicator.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
@@ -427,7 +421,7 @@ for name, data in pairs(toggles) do
     end)
 end
 
--- Dragging + M Key + Uptime
+-- Dragging
 local dragging, dragStart, startPos
 frame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -448,6 +442,7 @@ UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
 end)
 
+-- M Key Toggle UI
 UserInputService.InputBegan:Connect(function(input, gp)
     if not gp and input.KeyCode == Enum.KeyCode.M then
         UI_VISIBLE = not UI_VISIBLE
@@ -455,9 +450,10 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
+-- Uptime
 RunService.RenderStepped:Connect(function()
     local diff = os.time() - startTime
     uptimeLabel.Text = string.format("%02d:%02d:%02d", math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
 end)
 
-print("✅ PD-CHAMS-LITE Loaded")
+print("✅ PD-CHAMS-LITE Stable Version Loaded")
