@@ -28,7 +28,7 @@ local connections = {}
 local startTime = os.time()
 
 -------------------------------------------------------
---// HELPER FUNCTIONS
+--// HELPERS
 -------------------------------------------------------
 
 local function isPlayerCharacter(model)
@@ -42,7 +42,7 @@ local function isLeafPart(obj)
 end
 
 -------------------------------------------------------
---// IMPROVED TRACERS (Now works behind you)
+--// TRACERS (Fixed - Works Behind Camera)
 -------------------------------------------------------
 
 local function updateTracers()
@@ -52,25 +52,22 @@ local function updateTracers()
             continue
         end
 
-        local head = player.Character.Head
-        local worldPos = head.Position
-        local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
+        local headPos = player.Character.Head.Position
+        local screenPos, onScreen = Camera:WorldToViewportPoint(headPos)
 
         if onScreen then
-            -- Normal on-screen tracer
             line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y - 30)
             line.To = Vector2.new(screenPos.X, screenPos.Y)
             line.Visible = true
         else
-            -- Off-screen tracer (points toward player even if behind you)
-            local direction = (worldPos - Camera.CFrame.Position).Unit
-            local ray = Camera.CFrame.Position + direction * 1000
-            local screenEdge, _ = Camera:WorldToViewportPoint(ray)
+            -- Off-screen / Behind camera logic
+            local direction = (headPos - Camera.CFrame.Position).Unit
+            local farPoint = Camera.CFrame.Position + direction * 10000
+            local edgePos = Camera:WorldToViewportPoint(farPoint)
 
-            -- Clamp to screen edges
             local viewport = Camera.ViewportSize
-            local x = math.clamp(screenEdge.X, 20, viewport.X - 20)
-            local y = math.clamp(screenEdge.Y, 20, viewport.Y - 20)
+            local x = math.clamp(edgePos.X, 30, viewport.X - 30)
+            local y = math.clamp(edgePos.Y, 30, viewport.Y - 30)
 
             line.From = Vector2.new(viewport.X / 2, viewport.Y - 30)
             line.To = Vector2.new(x, y)
@@ -87,7 +84,7 @@ local function toggleTracers(state)
                 local line = Drawing.new("Line")
                 line.Thickness = 1.8
                 line.Color = Color3.fromRGB(255, 60, 60)
-                line.Transparency = 0.9
+                line.Transparency = 1
                 tracerLines[player] = line
             end
         end
@@ -130,6 +127,20 @@ local function togglePlayerESP(state)
         end
     end
 end
+
+-------------------------------------------------------
+--// AUTO UPDATE (New Players)
+-------------------------------------------------------
+
+connections.autoUpdate = RunService.Heartbeat:Connect(function()
+    if PLAYER_ESP_ENABLED then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and not playerHighlights[player] then
+                addHighlight(player, player.Character)
+            end
+        end
+    end
+end)
 
 -------------------------------------------------------
 --// NPC & ITEM ESP
@@ -210,7 +221,7 @@ local function toggleNoGrass(state)
     NO_GRASS_ENABLED = state
     local terrain = Workspace:FindFirstChild("Terrain")
     if terrain then
-        terrain.Decoration = not state   -- This should now work
+        terrain.Decoration = not state
     end
 end
 
@@ -244,28 +255,12 @@ local function toggleAntiRecoil(state)
                     if v:IsA("Vector3Value") then v.Value = Vector3.zero end
                 end
             end
-
-            if LocalPlayer.Character then
-                for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        for _, v in ipairs(tool:GetDescendants()) do
-                            if v:IsA("NumberValue") or v:IsA("Vector3Value") or v:IsA("DoubleConstrainedValue") then
-                                local name = v.Name:lower()
-                                if name:find("recoil") or name:find("kick") or name:find("climb") then
-                                    if v:IsA("NumberValue") or v:IsA("DoubleConstrainedValue") then v.Value = 0 end
-                                    if v:IsA("Vector3Value") then v.Value = Vector3.zero end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
         end)
     end
 end
 
 -------------------------------------------------------
---// GUI + SLIDER
+--// GUI
 -------------------------------------------------------
 
 local gui = Instance.new("ScreenGui")
@@ -274,8 +269,8 @@ gui.ResetOnSpawn = false
 gui.Parent = game:GetService("CoreGui")
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 580) -- Extra height for slider
-frame.Position = UDim2.new(0.1, 0, 0.15, 0)
+frame.Size = UDim2.new(0, 220, 0, 620)
+frame.Position = UDim2.new(0.1, 0, 0.12, 0)
 frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -342,16 +337,16 @@ end
 local toggles = {}
 local y = 70
 for _, data in ipairs({
-    {"Player ESP", togglePlayerESP, "PLAYER_ESP_ENABLED"},
-    {"Item ESP", toggleItemESP, "ITEM_ESP_ENABLED"},
-    {"NPC ESP", toggleNpcESP, "NPC_ESP_ENABLED"},
-    {"Tracers", toggleTracers, "TRACERS_ENABLED"},
-    {"No Grass", toggleNoGrass, "NO_GRASS_ENABLED"},
-    {"No Leaves", toggleNoLeaves, "NO_LEAVES_ENABLED"},
-    {"Anti Recoil", toggleAntiRecoil, "ANTI_RECOIL_ENABLED"},
+    {"Player ESP", togglePlayerESP},
+    {"Item ESP", toggleItemESP},
+    {"NPC ESP", toggleNpcESP},
+    {"Tracers", toggleTracers},
+    {"No Grass", toggleNoGrass},
+    {"No Leaves", toggleNoLeaves},
+    {"Anti Recoil", toggleAntiRecoil},
 }) do
     local btn, ind = makeButton(data[1], y)
-    toggles[data[1]] = {button = btn, indicator = ind, toggleFunc = data[2], var = data[3]}
+    toggles[data[1]] = {button = btn, indicator = ind, toggleFunc = data[2]}
     y += 42
 end
 
@@ -425,7 +420,7 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 -------------------------------------------------------
---// BUTTON LOGIC + OTHER FEATURES
+--// BUTTON LOGIC
 -------------------------------------------------------
 
 local function updateIndicator(btnData, state)
@@ -440,8 +435,14 @@ end
 
 for name, data in pairs(toggles) do
     data.button.MouseButton1Click:Connect(function()
-        local newState = not _G[data.var] 
-        _G[data.var] = newState
+        local newState = not (name == "Player ESP" and PLAYER_ESP_ENABLED or
+                            name == "Item ESP" and ITEM_ESP_ENABLED or
+                            name == "NPC ESP" and NPC_ESP_ENABLED or
+                            name == "Tracers" and TRACERS_ENABLED or
+                            name == "No Grass" and NO_GRASS_ENABLED or
+                            name == "No Leaves" and NO_LEAVES_ENABLED or
+                            name == "Anti Recoil" and ANTI_RECOIL_ENABLED)
+
         data.toggleFunc(newState)
         updateIndicator(data, newState)
     end)
