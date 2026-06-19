@@ -471,4 +471,4 @@ RunService.RenderStepped:Connect(function()
         math.floor(diff/3600), math.floor((diff%3600)/60), diff%60)
 end)
 
-print("✅ PD-CHAMS-LITE")
+print("✅ PD-CHAMS-LITE Loaded")
