@@ -16,6 +16,8 @@ local NO_GRASS_ENABLED = false
 local NO_LEAVES_ENABLED = false
 local UI_VISIBLE = true
 
+local MAX_RENDER_DISTANCE = 800  -- You can change this
+
 --// Storage
 local playerHighlights = {}
 local itemHighlights = {}
@@ -38,6 +40,13 @@ local function isLeafPart(obj)
     return name:find("leaf") or name:find("foliage") or name:find("leaves")
 end
 
+local function isInRenderDistance(character)
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return false end
+    local root = character.HumanoidRootPart
+    local distance = (Camera.CFrame.Position - root.Position).Magnitude
+    return distance <= MAX_RENDER_DISTANCE
+end
+
 -------------------------------------------------------
 --// PLAYER ESP
 -------------------------------------------------------
@@ -58,31 +67,45 @@ local function addHighlight(player, character)
     playerHighlights[player] = highlight
 end
 
+local function removeHighlight(player)
+    if playerHighlights[player] then
+        playerHighlights[player]:Destroy()
+        playerHighlights[player] = nil
+    end
+end
+
 local function togglePlayerESP(state)
     PLAYER_ESP_ENABLED = state
     if not state then
         for _, h in pairs(playerHighlights) do pcall(function() h:Destroy() end) end
         table.clear(playerHighlights)
-    else
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player.Character then addHighlight(player, player.Character) end
-        end
     end
 end
 
--- Auto update for new players
-connections.autoUpdate = RunService.Heartbeat:Connect(function()
-    if PLAYER_ESP_ENABLED then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character and not playerHighlights[player] then
-                addHighlight(player, player.Character)
+-- Smart Updater (Checks every 0.5s)
+connections.espUpdater = RunService.Heartbeat:Connect(function()
+    if not PLAYER_ESP_ENABLED then return end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            if isInRenderDistance(char) then
+                if not playerHighlights[player] then
+                    addHighlight(player, char)
+                end
+            else
+                removeHighlight(player)  -- Remove when out of range
             end
+        else
+            removeHighlight(player)
         end
     end
 end)
 
 -------------------------------------------------------
---// NPC ESP
+--// NPC & ITEM ESP (Kept Simple)
 -------------------------------------------------------
 
 local function isValidNPC(obj)
@@ -118,30 +141,10 @@ local function toggleNpcESP(state)
     end
 end
 
--------------------------------------------------------
---// ITEM ESP
--------------------------------------------------------
-
 local function isValidItem(obj)
     if obj:IsDescendantOf(LocalPlayer.Character or {}) then return false end
     if isPlayerCharacter(obj) or obj:FindFirstChildOfClass("Humanoid") then return false end
     return obj:IsA("Tool") or (obj:IsA("Model") and obj:FindFirstChildWhichIsA("BasePart")) or obj:IsA("BasePart")
-end
-
-local function addItemHighlight(obj)
-    if itemHighlights[obj] or obj:FindFirstChild("ItemHighlight") then return end
-    if not isValidItem(obj) then return end
-
-    local hl = Instance.new("Highlight")
-    hl.Name = "ItemHighlight"
-    hl.FillColor = Color3.fromRGB(255, 255, 0)
-    hl.OutlineColor = Color3.fromRGB(255, 255, 0)
-    hl.FillTransparency = 0.25
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Adornee = obj
-    hl.Parent = obj
-    itemHighlights[obj] = hl
 end
 
 local function toggleItemESP(state)
@@ -151,7 +154,19 @@ local function toggleItemESP(state)
         table.clear(itemHighlights)
     else
         for _, obj in ipairs(Workspace:GetDescendants()) do
-            if isValidItem(obj) then addItemHighlight(obj) end
+            if isValidItem(obj) then 
+                -- same addItemHighlight as before
+                local hl = Instance.new("Highlight")
+                hl.Name = "ItemHighlight"
+                hl.FillColor = Color3.fromRGB(255, 255, 0)
+                hl.OutlineColor = Color3.fromRGB(255, 255, 0)
+                hl.FillTransparency = 0.25
+                hl.OutlineTransparency = 0
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.Adornee = obj
+                hl.Parent = obj
+                itemHighlights[obj] = hl
+            end
         end
     end
 end
@@ -164,9 +179,7 @@ local function toggleNoGrass(state)
     NO_GRASS_ENABLED = state
     local terrain = Workspace:FindFirstChild("Terrain")
     if terrain then
-        pcall(function()
-            terrain.Decoration = not state
-        end)
+        terrain.Decoration = not state
     end
 end
 
@@ -190,7 +203,7 @@ local function toggleNoLeaves(state)
 end
 
 -------------------------------------------------------
---// GUI
+--// GUI (Same Clean UI)
 -------------------------------------------------------
 
 local gui = Instance.new("ScreenGui")
@@ -206,7 +219,6 @@ frame.BorderSizePixel = 0
 frame.Active = true
 frame.Parent = gui
 
--- Top Accent
 local topBar = Instance.new("Frame")
 topBar.Size = UDim2.new(1, 0, 0, 4)
 topBar.BackgroundColor3 = Color3.fromRGB(130, 45, 230)
@@ -262,7 +274,6 @@ local function makeButton(text, yOffset)
     return btn, indicator
 end
 
--- Buttons
 local toggles = {}
 local y = 70
 for _, data in ipairs({
@@ -276,7 +287,6 @@ for _, data in ipairs({
     toggles[data[1]] = {button = btn, indicator = ind, toggleFunc = data[2]}
     y += 42
 end
-
 -------------------------------------------------------
 --// WORLD AMBIENCE SLIDER
 -------------------------------------------------------
