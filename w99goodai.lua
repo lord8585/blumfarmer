@@ -22,12 +22,7 @@ local Ambience_Enabled = false
 local Ambience_Value = 128
 local Sky_Enabled = false
 
-local Original_Ambient = Lighting.Ambient
-local Original_OutdoorAmbient = Lighting.OutdoorAmbient
-local Original_ClockTime = Lighting.ClockTime
-
 local Skeletons = {}
-local ScriptStart = os.time()
 
 -------------------------------------------------------
 --// ESP Functions
@@ -62,68 +57,75 @@ local function createESP(player)
 end
 
 local function updateESP()
-    pcall(function()
-        for player, data in pairs(Skeletons) do
-            local char = player.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not char or not hum or hum.Health <= 0 then
-                removeESP(player)
-                continue
-            end
+    for player, data in pairs(Skeletons) do
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not char or not hum or hum.Health <= 0 then
+            removeESP(player)
+            continue
+        end
 
-            local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-            if not root then continue end
+        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+        if not root then continue end
 
-            local distance = (Camera.CFrame.Position - root.Position).Magnitude
-            if distance > Max_Render_Distance then
-                for _, line in pairs(data.Lines) do line.Visible = false end
-                data.NameText.Visible = false
-                data.DistanceText.Visible = false
-                continue
-            end
+        local distance = (Camera.CFrame.Position - root.Position).Magnitude
+        if distance > Max_Render_Distance then
+            for _, line in pairs(data.Lines) do line.Visible = false end
+            data.NameText.Visible = false
+            data.DistanceText.Visible = false
+            continue
+        end
 
-            -- Skeletons
-            local bones = {
-                {"UpperTorso","Head"}, {"UpperTorso","LeftUpperArm"}, {"LeftUpperArm","LeftLowerArm"},
-                {"LeftLowerArm","LeftHand"}, {"UpperTorso","RightUpperArm"}, {"RightUpperArm","RightLowerArm"},
-                {"RightLowerArm","RightHand"}, {"UpperTorso","LowerTorso"}, {"LowerTorso","LeftUpperLeg"},
-                {"LeftUpperLeg","LeftLowerLeg"}, {"LeftLowerLeg","LeftFoot"}, {"LowerTorso","RightUpperLeg"},
-                {"RightUpperLeg","RightLowerLeg"}, {"RightLowerLeg","RightFoot"}
-            }
+        -- Check if player is in front of camera (not behind)
+        local _, onScreen = Camera:WorldToViewportPoint(root.Position)
+        if not onScreen then
+            for _, line in pairs(data.Lines) do line.Visible = false end
+            data.NameText.Visible = false
+            data.DistanceText.Visible = false
+            continue
+        end
 
-            for i, bone in ipairs(bones) do
-                local partA = char:FindFirstChild(bone[1])
-                local partB = char:FindFirstChild(bone[2])
-                local line = data.Lines[i]
-                if partA and partB then
-                    local posA = Camera:WorldToViewportPoint(partA.Position)
-                    local posB = Camera:WorldToViewportPoint(partB.Position)
-                    line.From = Vector2.new(posA.X, posA.Y)
-                    line.To = Vector2.new(posB.X, posB.Y)
-                    line.Visible = ESP_Enabled
-                end
-            end
+        -- Skeletons
+        local bones = {
+            {"UpperTorso","Head"}, {"UpperTorso","LeftUpperArm"}, {"LeftUpperArm","LeftLowerArm"},
+            {"LeftLowerArm","LeftHand"}, {"UpperTorso","RightUpperArm"}, {"RightUpperArm","RightLowerArm"},
+            {"RightLowerArm","RightHand"}, {"UpperTorso","LowerTorso"}, {"LowerTorso","LeftUpperLeg"},
+            {"LeftUpperLeg","LeftLowerLeg"}, {"LeftLowerLeg","LeftFoot"}, {"LowerTorso","RightUpperLeg"},
+            {"RightUpperLeg","RightLowerLeg"}, {"RightLowerLeg","RightFoot"}
+        }
 
-            -- Name & Distance
-            local head = char:FindFirstChild("Head")
-            if head and Names_Enabled then
-                local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
-                data.NameText.Position = Vector2.new(headPos.X, headPos.Y)
-                data.NameText.Visible = true
-            else
-                data.NameText.Visible = false
-            end
-
-            if Distance_Enabled then
-                data.DistanceText.Text = tostring(math.round(distance)) .. " studs"
-                local feetPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
-                data.DistanceText.Position = Vector2.new(feetPos.X, feetPos.Y)
-                data.DistanceText.Visible = true
-            else
-                data.DistanceText.Visible = false
+        for i, bone in ipairs(bones) do
+            local partA = char:FindFirstChild(bone[1])
+            local partB = char:FindFirstChild(bone[2])
+            local line = data.Lines[i]
+            if partA and partB then
+                local posA = Camera:WorldToViewportPoint(partA.Position)
+                local posB = Camera:WorldToViewportPoint(partB.Position)
+                line.From = Vector2.new(posA.X, posA.Y)
+                line.To = Vector2.new(posB.X, posB.Y)
+                line.Visible = ESP_Enabled
             end
         end
-    end)
+
+        -- Name & Distance
+        local head = char:FindFirstChild("Head")
+        if head and Names_Enabled then
+            local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
+            data.NameText.Position = Vector2.new(headPos.X, headPos.Y)
+            data.NameText.Visible = true
+        else
+            data.NameText.Visible = false
+        end
+
+        if Distance_Enabled then
+            data.DistanceText.Text = tostring(math.round(distance)) .. " studs"
+            local feetPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+            data.DistanceText.Position = Vector2.new(feetPos.X, feetPos.Y)
+            data.DistanceText.Visible = true
+        else
+            data.DistanceText.Visible = false
+        end
+    end
 end
 
 -------------------------------------------------------
@@ -131,30 +133,28 @@ end
 -------------------------------------------------------
 
 local function updateBodyChams()
-    pcall(function()
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player == LocalPlayer then continue end
-            local char = player.Character
-            if char then
-                local highlight = char:FindFirstChild("BodyCham")
-                if BodyChams_Enabled then
-                    if not highlight then
-                        highlight = Instance.new("Highlight")
-                        highlight.Name = "BodyCham"
-                        highlight.FillColor = Color3.fromRGB(255, 200, 0)
-                        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-                        highlight.FillTransparency = 0.4
-                        highlight.OutlineTransparency = 0
-                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                        highlight.Adornee = char
-                        highlight.Parent = char
-                    end
-                elseif highlight then
-                    highlight:Destroy()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        local char = player.Character
+        if char then
+            local highlight = char:FindFirstChild("BodyCham")
+            if BodyChams_Enabled then
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "BodyCham"
+                    highlight.FillColor = Color3.fromRGB(255, 200, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.4
+                    highlight.OutlineTransparency = 0
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    highlight.Adornee = char
+                    highlight.Parent = char
                 end
+            elseif highlight then
+                highlight:Destroy()
             end
         end
-    end)
+    end
 end
 
 -------------------------------------------------------
@@ -170,7 +170,7 @@ end
 local function toggleNoLeaves(state)
     NoLeaves_Enabled = state
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if isLeafPart(obj) then
+        if obj:IsA("BasePart") and (obj.Name:lower():find("leaf") or obj.Name:lower():find("leaves")) then
             pcall(function()
                 obj.Transparency = state and 1 or 0
             end)
@@ -188,7 +188,7 @@ local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))
 local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 local Window = Library:CreateWindow({
-    Title = "Project Delta - Optimized ESP",
+    Title = "Project Delta - Fixed ESP",
     Center = true,
     AutoShow = true,
 })
@@ -220,4 +220,4 @@ end)
 Players.PlayerAdded:Connect(createESP)
 for _, plr in ipairs(Players:GetPlayers()) do createESP(plr) end
 
-print("yes!!!!")
+print("✅")
