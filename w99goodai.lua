@@ -8,11 +8,11 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 --// Settings
+local ESP_Enabled = false
 local Names_Enabled = false
 local Distance_Enabled = false
 local WeaponChams_Enabled = false
 local BodyChams_Enabled = false
-local NPC_ESP_ENABLED = false
 local Max_Render_Distance = 1200
 
 local NoGrass_Enabled = false
@@ -21,143 +21,135 @@ local Ambience_Enabled = false
 local Ambience_Value = 128
 local Sky_Enabled = false
 
-local NameTexts = {}
-local DistanceTexts = {}
-local NPC_Highlights = {}
+local Skeletons = {}
 
 -------------------------------------------------------
---// PLAYER NAME & DISTANCE ESP
+--// ESP Functions
 -------------------------------------------------------
 
-local function createNameESP(player)
-    if player == LocalPlayer then return end
-    local nameText = Drawing.new("Text")
-    nameText.Text = player.Name
-    nameText.Size = 13
-    nameText.Center = true
-    nameText.Outline = true
-    nameText.Color = Color3.fromRGB(255, 255, 255)
-    nameText.Visible = false
-    NameTexts[player] = nameText
+local function createDrawing(class, props)
+    local d = Drawing.new(class)
+    for k, v in pairs(props) do d[k] = v end
+    return d
 end
 
-local function createDistanceESP(player)
-    if player == LocalPlayer then return end
-    local distText = Drawing.new("Text")
-    distText.Size = 13
-    distText.Center = true
-    distText.Outline = true
-    distText.Color = Color3.fromRGB(255, 255, 255)
-    distText.Visible = false
-    DistanceTexts[player] = distText
+local function removeESP(player)
+    if Skeletons[player] then
+        for _, line in pairs(Skeletons[player].Lines) do line:Remove() end
+        if Skeletons[player].NameText then Skeletons[player].NameText:Remove() end
+        if Skeletons[player].DistanceText then Skeletons[player].DistanceText:Remove() end
+        Skeletons[player] = nil
+    end
 end
 
-local function updatePlayerESP()
-    for player, nameText in pairs(NameTexts) do
+local function createESP(player)
+    if player == LocalPlayer then return end
+    local linesPool = {}
+    for i = 1, 14 do
+        linesPool[i] = createDrawing("Line", {Color = Color3.fromRGB(255, 0, 0), Thickness = 1.5, Visible = false})
+    end
+    Skeletons[player] = {
+        Lines = linesPool,
+        NameText = createDrawing("Text", {Text = player.Name, Size = 13, Center = true, Outline = true, Color = Color3.fromRGB(255,255,255), Visible = false}),
+        DistanceText = createDrawing("Text", {Text = "", Size = 13, Center = true, Outline = true, Color = Color3.fromRGB(255,255,255), Visible = false})
+    }
+end
+
+local function updateESP()
+    for player, data in pairs(Skeletons) do
         local char = player.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not char or not root or not hum or hum.Health <= 0 then
-            nameText.Visible = false
-            if DistanceTexts[player] then DistanceTexts[player].Visible = false end
+        if not char or not hum or hum.Health <= 0 then
+            removeESP(player)
             continue
         end
 
+        local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+        if not root then continue end
+
         local distance = (Camera.CFrame.Position - root.Position).Magnitude
         if distance > Max_Render_Distance then
-            nameText.Visible = false
-            if DistanceTexts[player] then DistanceTexts[player].Visible = false end
+            for _, line in pairs(data.Lines) do line.Visible = false end
+            data.NameText.Visible = false
+            data.DistanceText.Visible = false
             continue
         end
 
         local _, onScreen = Camera:WorldToViewportPoint(root.Position)
         if not onScreen then
-            nameText.Visible = false
-            if DistanceTexts[player] then DistanceTexts[player].Visible = false end
+            for _, line in pairs(data.Lines) do line.Visible = false end
+            data.NameText.Visible = false
+            data.DistanceText.Visible = false
             continue
         end
 
-        -- Name
-        if Names_Enabled then
-            local head = char:FindFirstChild("Head")
-            if head then
-                local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2.5, 0))
-                nameText.Position = Vector2.new(headPos.X, headPos.Y)
-                nameText.Visible = true
+        -- Skeletons
+        local bones = {
+            {"UpperTorso","Head"}, {"UpperTorso","LeftUpperArm"}, {"LeftUpperArm","LeftLowerArm"},
+            {"LeftLowerArm","LeftHand"}, {"UpperTorso","RightUpperArm"}, {"RightUpperArm","RightLowerArm"},
+            {"RightLowerArm","RightHand"}, {"UpperTorso","LowerTorso"}, {"LowerTorso","LeftUpperLeg"},
+            {"LeftUpperLeg","LeftLowerLeg"}, {"LeftLowerLeg","LeftFoot"}, {"LowerTorso","RightUpperLeg"},
+            {"RightUpperLeg","RightLowerLeg"}, {"RightLowerLeg","RightFoot"}
+        }
+
+        for i, bone in ipairs(bones) do
+            local partA = char:FindFirstChild(bone[1])
+            local partB = char:FindFirstChild(bone[2])
+            local line = data.Lines[i]
+            if partA and partB then
+                local posA = Camera:WorldToViewportPoint(partA.Position)
+                local posB = Camera:WorldToViewportPoint(partB.Position)
+                line.From = Vector2.new(posA.X, posA.Y)
+                line.To = Vector2.new(posB.X, posB.Y)
+                line.Visible = ESP_Enabled
             end
-        else
-            nameText.Visible = false
         end
 
-        -- Distance
-        if Distance_Enabled and DistanceTexts[player] then
+        -- Name & Distance
+        local head = char:FindFirstChild("Head")
+        if head and Names_Enabled then
+            local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
+            data.NameText.Position = Vector2.new(headPos.X, headPos.Y)
+            data.NameText.Visible = true
+        else
+            data.NameText.Visible = false
+        end
+
+        if Distance_Enabled then
+            data.DistanceText.Text = tostring(math.round(distance)) .. " studs"
             local feetPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
-            DistanceTexts[player].Text = tostring(math.round(distance)) .. " studs"
-            DistanceTexts[player].Position = Vector2.new(feetPos.X, feetPos.Y)
-            DistanceTexts[player].Visible = true
+            data.DistanceText.Position = Vector2.new(feetPos.X, feetPos.Y)
+            data.DistanceText.Visible = true
         else
-            if DistanceTexts[player] then DistanceTexts[player].Visible = false end
+            data.DistanceText.Visible = false
         end
     end
 end
 
 -------------------------------------------------------
---// NPC ESP
+--// BODY CHAMS
 -------------------------------------------------------
 
-local function addNpcHighlight(obj)
-    if NPC_Highlights[obj] or obj:FindFirstChild("NpcHighlight") then return end
-    if not (obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and obj:FindFirstChild("HumanoidRootPart")) then return end
-    if Players:GetPlayerFromCharacter(obj) then return end
-
-    local hl = Instance.new("Highlight")
-    hl.Name = "NpcHighlight"
-    hl.FillColor = Color3.fromRGB(0, 120, 255)
-    hl.OutlineColor = Color3.fromRGB(0, 200, 255)
-    hl.FillTransparency = 0.3
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Adornee = obj
-    hl.Parent = obj
-    NPC_Highlights[obj] = hl
-end
-
-local function toggleNpcESP(state)
-    NPC_ESP_ENABLED = state
-    if not state then
-        for _, h in pairs(NPC_Highlights) do h:Destroy() end
-        NPC_Highlights = {}
-    else
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            addNpcHighlight(obj)
-        end
-    end
-end
-
--------------------------------------------------------
---// BODY & WEAPON CHAMS
--------------------------------------------------------
-
-local function updateChams()
+local function updateBodyChams()
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
         local char = player.Character
         if char then
-            local hl = char:FindFirstChild("BodyCham")
+            local highlight = char:FindFirstChild("BodyCham")
             if BodyChams_Enabled then
-                if not hl then
-                    hl = Instance.new("Highlight")
-                    hl.Name = "BodyCham"
-                    hl.FillColor = Color3.fromRGB(255, 200, 0)
-                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    hl.FillTransparency = 0.4
-                    hl.OutlineTransparency = 0
-                    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                    hl.Adornee = char
-                    hl.Parent = char
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "BodyCham"
+                    highlight.FillColor = Color3.fromRGB(255, 200, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.FillTransparency = 0.4
+                    highlight.OutlineTransparency = 0
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    highlight.Adornee = char
+                    highlight.Parent = char
                 end
-            elseif hl then
-                hl:Destroy()
+            elseif highlight then
+                highlight:Destroy()
             end
         end
     end
@@ -194,23 +186,21 @@ local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))
 local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 local Window = Library:CreateWindow({
-    Title = "Project Delta - Clean ESP",
+    Title = "Project Delta - Fixed ESP",
     Center = true,
     AutoShow = true,
 })
 
 local MainTab = Window:AddTab('Main')
-local VisualsBox = MainTab:AddLeftGroupbox('Player ESP')
-local NpcBox = MainTab:AddLeftGroupbox('NPC ESP')
+local VisualsBox = MainTab:AddLeftGroupbox('ESP')
 local EnvironmentBox = MainTab:AddRightGroupbox('World')
 
+VisualsBox:AddToggle('ESP', { Text = 'Skeletons', Default = false, Callback = function(v) ESP_Enabled = v end })
 VisualsBox:AddToggle('Names', { Text = 'Names', Default = false, Callback = function(v) Names_Enabled = v end })
 VisualsBox:AddToggle('Distance', { Text = 'Distance', Default = false, Callback = function(v) Distance_Enabled = v end })
 VisualsBox:AddSlider('RenderDist', { Text = 'Max Render Distance', Default = 1200, Min = 100, Max = 5000, Rounding = 0, Callback = function(v) Max_Render_Distance = v end })
 VisualsBox:AddToggle('WeaponChams', { Text = 'Weapon Chams', Default = false, Callback = function(v) WeaponChams_Enabled = v end })
 VisualsBox:AddToggle('BodyChams', { Text = 'Full Body Chams', Default = false, Callback = function(v) BodyChams_Enabled = v end })
-
-NpcBox:AddToggle('NpcESP', { Text = 'NPC ESP', Default = false, Callback = toggleNpcESP })
 
 EnvironmentBox:AddToggle('NoGrass', { Text = 'No Grass', Default = false, Callback = toggleNoGrass })
 EnvironmentBox:AddToggle('NoLeaves', { Text = 'No Leaves', Default = false, Callback = toggleNoLeaves })
@@ -220,19 +210,18 @@ EnvironmentBox:AddToggle('FullBright', { Text = 'Full Bright Sky', Default = fal
 
 -- Main Loop
 RunService.RenderStepped:Connect(function()
-    updatePlayerESP()
-    updateChams()
+    updateESP()
+    updateBodyChams()
 end)
 
--- Player Join
+-- Auto Create ESP for new players
 Players.PlayerAdded:Connect(function(plr)
-    createNameESP(plr)
-    createDistanceESP(plr)
+    createESP(plr)
 end)
 
+-- Create for existing players
 for _, plr in ipairs(Players:GetPlayers()) do
-    createNameESP(plr)
-    createDistanceESP(plr)
+    createESP(plr)
 end
 
-print("yuhhh!!!")
+print("yuhhh!!!!")
