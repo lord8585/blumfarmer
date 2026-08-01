@@ -1,5 +1,5 @@
 for _, v in ipairs(game:GetService("CoreGui"):GetChildren()) do 
-    if v.Name == "SvoGui_V17" then v:Destroy() end 
+    if v.Name == "V17" then v:Destroy() end 
 end
 
 local Players = game:GetService("Players")
@@ -23,7 +23,7 @@ local AimFovBtn = Instance.new("TextButton")
 local UnloadBtn = Instance.new("TextButton")
 local ToggleWindowBtn = Instance.new("TextButton")
 
-ScreenGui.Name = "SvoGui_V17"
+ScreenGui.Name = "V17"
 ScreenGui.Parent = game:GetService("CoreGui")
 ScreenGui.ResetOnSpawn = false
 
@@ -52,7 +52,7 @@ MainFrame.Draggable = true
 Title.Parent = MainFrame
 Title.Size = UDim2.new(1, 0, 0.07, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "svocheats v17"
+Title.Text = "v17"
 Title.TextColor3 = Color3.fromRGB(230, 230, 230)
 Title.TextSize = 13
 Title.Font = Enum.Font.Code
